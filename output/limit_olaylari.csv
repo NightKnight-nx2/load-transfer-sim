@@ -1,0 +1,7 @@
+senaryo,aks,tur,viraj,t0_s,t1_s,s0_m,s1_m,tepe_kullanim_pct,tepe_alpha/alpha_pik
+front_stiff,front,understeer,T3 S-bend (L),15.38,16.19,269.1,279.4,99.7,0.87
+front_stiff,front,understeer,T4 S-bend (R),17.02,17.26,290.0,293.1,99.5,0.85
+rear_stiff,rear,oversteer,T1 sweeper (L),5.49,6.89,105.6,129.9,100.0,0.98
+rear_stiff,rear,oversteer,T3 S-bend (L),15.14,16.38,266.0,281.9,100.0,1.28
+rear_stiff,rear,oversteer,T4 S-bend (R),16.86,17.68,288.0,298.9,100.0,1.42
+rear_stiff,rear,oversteer,T5 sweeper (L),20.88,22.28,355.0,379.2,100.0,0.98

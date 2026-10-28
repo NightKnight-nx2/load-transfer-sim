@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yük Transferi Simülasyonu</title>
+<style>
+:root{color-scheme:light;--bg:#fcfcfb;--panel:#f4f3ef;--ink:#0b0b0b;--ink2:#52514e;--grid:#e4e3de;--road:#ecebe6;--roadline:#b9b8b0;--warn:#e34948;--s0:#2a78d6;--s1:#eb6834;--s2:#1baf7a}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#1a1a19;--panel:#242422;--ink:#f0efec;--ink2:#c3c2b7;--grid:#3a3936;--road:#2d2c2a;--roadline:#5d5c57;--warn:#e66767;--s0:#3987e5;--s1:#d95926;--s2:#199e70}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1320px;margin:0 auto;padding:16px}
+h1{font-size:18px;margin:0 0 2px}
+.sub{color:var(--ink2);margin:0 0 12px;font-size:13px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+button,select{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--grid);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--ink2)}
+button.primary{min-width:92px;font-weight:600}
+label.chk{display:inline-flex;gap:6px;align-items:center;color:var(--ink2);font-size:13px}
+input[type=range]{accent-color:var(--s0)}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px}
+@media (max-width:960px){.main{grid-template-columns:1fr}}
+.stage{background:var(--panel);border:1px solid var(--grid);border-radius:12px;overflow:hidden;position:relative}
+#cv{display:block;width:100%;height:min(62vh,600px);min-height:340px}
+#hud{position:absolute;left:12px;top:10px;font-size:13px;color:var(--ink2);pointer-events:none}
+#hud b{color:var(--ink);font-size:15px}
+#tl{display:block;width:100%;height:84px;margin-top:10px;background:var(--panel);border:1px solid var(--grid);border-radius:12px;cursor:pointer;touch-action:none}
+.cards{display:flex;flex-direction:column;gap:10px}
+.card{background:var(--panel);border:1px solid var(--grid);border-radius:12px;padding:10px 12px}
+.card h3{margin:0 0 6px;font-size:13px;display:flex;align-items:center;gap:8px}
+.dot{width:12px;height:12px;border-radius:50%;display:inline-block}
+.row{display:grid;grid-template-columns:62px 1fr 40px;gap:8px;align-items:center;margin:3px 0;font-size:12px;color:var(--ink2)}
+.track{height:10px;background:var(--grid);border-radius:5px;position:relative;overflow:hidden}
+.fill{height:100%;border-radius:5px;transition:none}
+.fill.lim{background:var(--warn)!important}
+.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+.wheels{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-top:6px}
+.wh{font-size:11px;color:var(--ink2)}
+.wh .track{height:7px;margin-top:2px}
+.badge{margin-top:6px;font-size:12px;font-weight:600;padding:3px 8px;border-radius:6px;display:inline-block;background:var(--grid);color:var(--ink2)}
+.badge.lim{background:var(--warn);color:#fff}
+.meta{display:flex;justify-content:space-between;font-size:12px;color:var(--ink2);margin-top:4px}
+.log{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px}
+.log button{font-size:12px;padding:4px 8px}
+.foot{color:var(--ink2);font-size:12px;margin-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Lastik yük transferi — understeer / oversteer</h1>
+  <p class="sub">Aynı pist, aynı hız profili, aynı sürücü; yalnızca ön/arka roll stiffness dağılımı (K_f : K_r) farklı. Veriler Python simülasyonundan (Pacejka + bicycle model) gelir.</p>
+  <div class="bar">
+    <button id="play" class="primary">⏸ Duraklat</button>
+    <button id="restart">⟲ Başa sar</button>
+    <select id="speed"><option value="0.25">0.25×</option><option value="0.5" selected>0.5×</option><option value="1">1×</option><option value="2">2×</option></select>
+    <select id="cam"></select>
+    <label class="chk">yakınlık <input type="range" id="zoom" min="4" max="26" value="11"></label>
+    <label class="chk"><input type="checkbox" id="trail" checked> iz</label>
+    <label class="chk"><input type="checkbox" id="vel" checked> hız vektörü</label>
+  </div>
+  <div class="main">
+    <div>
+      <div class="stage"><canvas id="cv"></canvas><div id="hud"></div></div>
+      <canvas id="tl" aria-label="Zaman çizelgesi"></canvas>
+      <div class="log" id="log"></div>
+      <p class="foot">Araçlar takip kamerasında gerçek ölçekte, tüm pist görünümünde okunabilirlik için büyütülmüş çizilir. Tekerlek rengi normal yükle koyulaşır. Ince çizgi = hız vektörü (gövde yönünden sapma = yan kayma). Limit = aksın friction-circle kullanımı ≥ %98.5 veya kayma açısı pik değere ulaşmış. Boşluk = oynat/duraklat, ← → = kare kare.</p>
+    </div>
+    <div class="cards" id="cards"></div>
+  </div>
+</div>
+<script type="application/json" id="data">__DATA__</script>
+<script>
+(function(){
+"use strict";
+const D = JSON.parse(document.getElementById('data').textContent);
+const N = D.n, FPS = D.fps, T = D.T, SC = D.scen;
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const tl = document.getElementById('tl'), tctx = tl.getContext('2d');
+const css = () => getComputedStyle(document.documentElement);
+let C = {};
+function readTheme(){ const s = css(); const g = n => s.getPropertyValue(n).trim();
+  C = {bg:g('--bg'),panel:g('--panel'),ink:g('--ink'),ink2:g('--ink2'),grid:g('--grid'),road:g('--road'),roadline:g('--roadline'),warn:g('--warn'),sc:[g('--s0'),g('--s1'),g('--s2')]}; }
+readTheme();
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTheme);
+
+// ---- durum
+let t = 0, playing = true, speed = 0.5, camMode = 0, zoom = 11, showTrail = true, showVel = true, last = null;
+
+// ---- pist hazırlığı
+const TR = D.track, ROAD_W = 4.0;
+const nTr = TR.x.length;
+const edgeL = [], edgeR = [];
+for (let i = 0; i < nTr; i++) { const nx = -Math.sin(TR.h[i]), ny = Math.cos(TR.h[i]);
+  edgeL.push([TR.x[i] + ROAD_W*nx, TR.y[i] + ROAD_W*ny]); edgeR.push([TR.x[i] - ROAD_W*nx, TR.y[i] - ROAD_W*ny]); }
+let bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9;
+for (let i = 0; i < nTr; i++){ bx0 = Math.min(bx0, TR.x[i]); bx1 = Math.max(bx1, TR.x[i]); by0 = Math.min(by0, TR.y[i]); by1 = Math.max(by1, TR.y[i]); }
+function sIndex(s){ let lo = 0, hi = nTr - 1; while (lo < hi){ const m = (lo + hi) >> 1; if (TR.s[m] < s) lo = m + 1; else hi = m; } return lo; }
+D.corners.forEach(c => { c.i0 = sIndex(c.s0); c.i1 = sIndex(c.s1); c.im = (c.i0 + c.i1) >> 1; });
+// Kare -> mesafe -> viraj
+function cornerAt(s){ for (const c of D.corners) if (s >= c.s0 - 6 && s <= c.s1 + 6) return c; return null; }
+function frameOfS(s){ let lo = 0, hi = N - 1; while (lo < hi){ const m = (lo + hi) >> 1; if (D.s[m] < s) lo = m + 1; else hi = m; } return lo; }
+
+// ---- arayüz kurulumu
+const camSel = document.getElementById('cam');
+SC.forEach((s, i) => { const o = document.createElement('option'); o.value = i; o.textContent = 'Takip: ' + s.label.split(' (')[0]; camSel.appendChild(o); });
+{ const o = document.createElement('option'); o.value = SC.length; o.textContent = 'Tüm pist'; camSel.appendChild(o); }
+const cards = document.getElementById('cards'); const ui = [];
+const WN = ['FL','FR','RL','RR'];
+SC.forEach((s, i) => {
+  const d = document.createElement('div'); d.className = 'card';
+  d.innerHTML = `<h3><span class="dot" style="background:var(--s${i})"></span>${s.label}</h3>
+    <div class="row"><span>Ön aks</span><div class="track"><div class="fill" style="background:var(--s${i})"></div></div><span class="num"></span></div>
+    <div class="row"><span>Arka aks</span><div class="track"><div class="fill" style="background:var(--s${i})"></div></div><span class="num"></span></div>
+    <div class="wheels">${WN.map(n => `<div class="wh"><div style="display:flex;justify-content:space-between"><span>${n}</span><span class="num"></span></div><div class="track"><div class="fill" style="background:var(--s${i});opacity:.75"></div></div></div>`).join('')}</div>
+    <div class="meta"><span class="tx1"></span><span class="tx2"></span></div>
+    <div class="badge"></div>`;
+  cards.appendChild(d);
+  const f = d.querySelectorAll('.fill'), n = d.querySelectorAll('.num');
+  ui.push({fillF:f[0], fillR:f[1], numF:n[0], numR:n[1], wf:[f[2],f[3],f[4],f[5]], wn:[n[2],n[3],n[4],n[5]], tx1:d.querySelector('.tx1'), tx2:d.querySelector('.tx2'), badge:d.querySelector('.badge')});
+});
+const logEl = document.getElementById('log');
+SC.forEach((s, i) => s.events.forEach(e => { const b = document.createElement('button');
+  b.innerHTML = `<span class="dot" style="background:var(--s${i});width:9px;height:9px"></span> ${e.kind} · ${e.corner.split(' ')[0]} · ${e.t0.toFixed(1)} s`;
+  b.title = s.label + ' — ' + e.corner; b.onclick = () => { t = Math.max(0, e.t0 - 1.0); draw(); }; logEl.appendChild(b); }));
+
+// ---- boyutlandırma
+let W = 0, H = 0, TW = 0, TH = 0, dpr = 1;
+function resize(){ dpr = window.devicePixelRatio || 1;
+  const r = cv.getBoundingClientRect(); W = r.width; H = r.height; cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
+  const q = tl.getBoundingClientRect(); TW = q.width; TH = q.height; tl.width = Math.round(TW*dpr); tl.height = Math.round(TH*dpr); draw(); }
+window.addEventListener('resize', resize);
+
+// ---- yardımcılar
+const lerp = (a, i, f) => a[i] + (a[Math.min(i+1, N-1)] - a[i]) * f;
+function cam(fi, ff){
+  if (camMode >= SC.length){ const k = Math.min((W-40)/(bx1-bx0+30), (H-40)/(by1-by0+30)); return {k, cx:(bx0+bx1)/2, cy:(by0+by1)/2, whole:true}; }
+  const s = SC[camMode]; return {k:zoom, cx:lerp(s.X, fi, ff), cy:lerp(s.Y, fi, ff), whole:false};
+}
+
+function drawCar(s, i, fi, ff, K, carScale, alpha){
+  const x = lerp(s.X, fi, ff), y = lerp(s.Y, fi, ff), psi = lerp(s.psi, fi, ff), dl = lerp(s.delta, fi, ff), bt = lerp(s.beta, fi, ff);
+  const sx = (x - K.cx)*K.k + W/2, sy = H/2 - (y - K.cy)*K.k;
+  const sc = K.k * carScale, a = D.car.a, b = D.car.b, hw = D.car.track/2;
+  ctx.save(); ctx.translate(sx, sy); ctx.rotate(-psi); ctx.scale(sc, -sc);
+  ctx.globalAlpha = alpha;
+  // gövde
+  ctx.fillStyle = C.sc[i]; ctx.strokeStyle = C.ink; ctx.lineWidth = 1.2/sc;
+  const x0 = -b - 0.75, x1 = a + 0.75, w = 0.92;
+  ctx.beginPath(); ctx.moveTo(x0, -w); ctx.lineTo(x1 - 0.5, -w); ctx.lineTo(x1, -w*0.55); ctx.lineTo(x1, w*0.55); ctx.lineTo(x1 - 0.5, w); ctx.lineTo(x0, w); ctx.closePath();
+  ctx.globalAlpha = alpha*0.55; ctx.fill(); ctx.globalAlpha = alpha; ctx.stroke();
+  // kabin
+  ctx.fillStyle = C.ink; ctx.globalAlpha = alpha*0.25; ctx.fillRect(-0.9, -0.62, 1.7, 1.24); ctx.globalAlpha = alpha;
+  // tekerlekler (yüke göre koyuluk)
+  const pos = [[a, hw, dl],[a, -hw, dl],[-b, hw, 0],[-b, -hw, 0]];
+  // FL=sol(+y), FR=sağ(-y)
+  const wi = [0,1,2,3];
+  for (let k = 0; k < 4; k++){
+    const fz = lerp(s.fz[k], fi, ff); const p = pos[k];
+    ctx.save(); ctx.translate(p[0], p[1]); ctx.rotate(p[2]);
+    ctx.fillStyle = C.ink; ctx.globalAlpha = alpha*(0.25 + 0.75*Math.min(fz/6500, 1));
+    ctx.fillRect(-0.36, -0.13, 0.72, 0.26); ctx.restore();
+  }
+  ctx.globalAlpha = alpha;
+  // limit göstergesi
+  const pulse = 0.55 + 0.45*Math.sin(performance.now()/110);
+  const fl = s.fl[fi], rl = s.rl[fi];
+  ctx.strokeStyle = C.warn; ctx.lineWidth = 4/sc; ctx.globalAlpha = pulse;
+  if (fl){ ctx.beginPath(); ctx.moveTo(a + 0.25, -1.15); ctx.lineTo(a + 0.25, 1.15); ctx.stroke(); }
+  if (rl){ ctx.beginPath(); ctx.moveTo(-b - 0.25, -1.15); ctx.lineTo(-b - 0.25, 1.15); ctx.stroke(); }
+  ctx.restore();
+  // hız vektörü (dünya yönünde)
+  if (showVel){ const v = lerp(s.v, fi, ff), ang = psi + bt, L = (2.5 + v*0.18)*carScale*K.k;
+    ctx.save(); ctx.strokeStyle = C.ink; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(ang)*L, sy - Math.sin(ang)*L); ctx.stroke(); ctx.restore(); }
+}
+
+function draw(){
+  const fpos = Math.min(t*FPS, N-1.001), fi = Math.floor(fpos), ff = fpos - fi;
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H); ctx.fillStyle = C.panel; ctx.fillRect(0,0,W,H);
+  const K = cam(fi, ff);
+  const P = (x, y) => [(x - K.cx)*K.k + W/2, H/2 - (y - K.cy)*K.k];
+  // yol
+  ctx.beginPath(); edgeL.forEach((p, i) => { const q = P(p[0], p[1]); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); });
+  for (let i = nTr-1; i >= 0; i--){ const q = P(edgeR[i][0], edgeR[i][1]); ctx.lineTo(q[0], q[1]); }
+  ctx.closePath(); ctx.fillStyle = C.road; ctx.fill();
+  ctx.strokeStyle = C.roadline; ctx.lineWidth = 1; ctx.stroke();
+  ctx.setLineDash([8, 8]); ctx.beginPath(); for (let i = 0; i < nTr; i++){ const q = P(TR.x[i], TR.y[i]); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); } ctx.stroke(); ctx.setLineDash([]);
+  // viraj vurgusu + etiket
+  D.corners.forEach(c => { ctx.beginPath();
+    for (let i = c.i0; i <= c.i1; i++){ const q = P(edgeL[i][0], edgeL[i][1]); i === c.i0 ? ctx.moveTo(q[0], q[1]) : ctx.lineTo(q[0], q[1]); }
+    for (let i = c.i1; i >= c.i0; i--){ const q = P(edgeR[i][0], edgeR[i][1]); ctx.lineTo(q[0], q[1]); }
+    ctx.closePath(); ctx.fillStyle = C.ink; ctx.globalAlpha = 0.06; ctx.fill(); ctx.globalAlpha = 1;
+    const i = c.im, sg = c.dir === 'L' ? -1 : 1, nx = -Math.sin(TR.h[i]), ny = Math.cos(TR.h[i]);
+    const q = P(TR.x[i] + sg*(ROAD_W + 4)*nx, TR.y[i] + sg*(ROAD_W + 4)*ny);
+    ctx.fillStyle = C.ink2; ctx.font = '600 12px system-ui'; ctx.textAlign = 'center'; ctx.fillText(c.name.split(' ')[0], q[0], q[1]); });
+  // izler
+  if (showTrail){ SC.forEach((s, i) => { const a0 = Math.max(0, fi - 90); ctx.beginPath();
+    for (let k = a0; k <= fi; k++){ const q = P(s.X[k], s.Y[k]); k === a0 ? ctx.moveTo(q[0], q[1]) : ctx.lineTo(q[0], q[1]); }
+    ctx.strokeStyle = C.sc[i]; ctx.lineWidth = 2; ctx.globalAlpha = 0.7; ctx.stroke(); ctx.globalAlpha = 1; }); }
+  // araçlar (seçili olan en üstte)
+  const order = SC.map((_, i) => i).sort((a, b) => (a === camMode) - (b === camMode));
+  const scale = K.whole ? 3.5 : 1;
+  order.forEach(i => drawCar(SC[i], i, fi, ff, K, scale, K.whole ? 1 : 0.8));
+  // HUD
+  const s = lerp(D.s, fi, ff), c = cornerAt(s);
+  document.getElementById('hud').innerHTML = `<b>${t.toFixed(1)} s</b> · ${s.toFixed(0)} m${c ? ' · ' + c.name : ' · düzlük'}`;
+  // kartlar
+  SC.forEach((sc, i) => { const u = ui[i];
+    const uf = lerp(sc.uf, fi, ff), ur = lerp(sc.ur, fi, ff);
+    u.fillF.style.width = Math.min(uf*100, 100) + '%'; u.fillR.style.width = Math.min(ur*100, 100) + '%';
+    u.fillF.classList.toggle('lim', !!sc.fl[fi]); u.fillR.classList.toggle('lim', !!sc.rl[fi]);
+    u.numF.textContent = (uf*100).toFixed(0) + '%'; u.numR.textContent = (ur*100).toFixed(0) + '%';
+    for (let k = 0; k < 4; k++){ const fz = lerp(sc.fz[k], fi, ff); u.wf[k].style.width = Math.min(fz/70, 100) + '%'; u.wn[k].textContent = fz.toFixed(0) + ' N'; }
+    const df = lerp(sc.dff, fi, ff), dr = lerp(sc.dfr, fi, ff);
+    u.tx1.textContent = `transfer ön ${df >= 0 ? '→' : '←'} ${Math.abs(df).toFixed(0)} N · arka ${dr >= 0 ? '→' : '←'} ${Math.abs(dr).toFixed(0)} N`;
+    u.tx2.textContent = `${(lerp(sc.v, fi, ff)*3.6).toFixed(0)} km/h · ${lerp(sc.ay, fi, ff).toFixed(2)} g · β ${(lerp(sc.beta, fi, ff)*57.2958).toFixed(1)}°`;
+    const lf = sc.fl[fi], lr = sc.rl[fi];
+    u.badge.className = 'badge' + (lf || lr ? ' lim' : '');
+    u.badge.textContent = lf && lr ? 'ÖN + ARKA LİMİTTE' : lf ? 'ÖN LİMİTTE → understeer' : lr ? 'ARKA LİMİTTE → oversteer' : 'grip içinde'; });
+  drawTimeline();
+}
+
+function drawTimeline(){
+  tctx.setTransform(dpr,0,0,dpr,0,0); tctx.clearRect(0,0,TW,TH);
+  const X = tt => 10 + (tt/T)*(TW - 20);
+  D.corners.forEach(c => { const t0 = D.s.findIndex(v => v >= c.s0)/FPS, t1 = D.s.findIndex(v => v >= c.s1)/FPS;
+    tctx.fillStyle = C.ink; tctx.globalAlpha = 0.07; tctx.fillRect(X(t0), 4, X(t1) - X(t0), TH - 8); tctx.globalAlpha = 1;
+    tctx.fillStyle = C.ink2; tctx.font = '11px system-ui'; tctx.textAlign = 'center'; tctx.fillText(c.name.split(' ')[0], (X(t0) + X(t1))/2, 15); });
+  SC.forEach((s, i) => { const y = 24 + i*17;
+    tctx.fillStyle = C.grid; tctx.fillRect(10, y + 5, TW - 20, 1);
+    s.events.forEach(e => { tctx.fillStyle = C.sc[i]; tctx.fillRect(X(e.t0), y, Math.max(X(e.t1) - X(e.t0), 3), 11);
+      tctx.fillStyle = C.ink; tctx.font = '9px system-ui'; tctx.textAlign = 'left'; tctx.fillText(e.axle === 'front' ? '▼' : '▲', X(e.t0) + 1, y + 9); }); });
+  tctx.strokeStyle = C.ink; tctx.lineWidth = 2; tctx.beginPath(); tctx.moveTo(X(t), 2); tctx.lineTo(X(t), TH - 2); tctx.stroke();
+}
+function seekFromEvent(ev){ const r = tl.getBoundingClientRect(); const p = (ev.clientX - r.left - 10)/(r.width - 20); t = Math.max(0, Math.min(T, p*T)); draw(); }
+let drag = false;
+tl.addEventListener('pointerdown', e => { drag = true; tl.setPointerCapture(e.pointerId); seekFromEvent(e); });
+tl.addEventListener('pointermove', e => { if (drag) seekFromEvent(e); });
+tl.addEventListener('pointerup', () => { drag = false; });
+
+// ---- kontroller
+const playBtn = document.getElementById('play');
+function setPlay(v){ playing = v; playBtn.textContent = v ? '⏸ Duraklat' : '▶ Oynat'; last = null; }
+playBtn.onclick = () => setPlay(!playing);
+document.getElementById('restart').onclick = () => { t = 0; setPlay(true); };
+document.getElementById('speed').onchange = e => { speed = parseFloat(e.target.value); };
+camSel.onchange = e => { camMode = parseInt(e.target.value, 10); draw(); };
+document.getElementById('zoom').oninput = e => { zoom = parseFloat(e.target.value); draw(); };
+document.getElementById('trail').onchange = e => { showTrail = e.target.checked; draw(); };
+document.getElementById('vel').onchange = e => { showVel = e.target.checked; draw(); };
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space'){ e.preventDefault(); setPlay(!playing); }
+  else if (e.code === 'ArrowRight'){ setPlay(false); t = Math.min(T, t + 1/FPS); draw(); }
+  else if (e.code === 'ArrowLeft'){ setPlay(false); t = Math.max(0, t - 1/FPS); draw(); } });
+
+function loop(now){
+  if (playing){ if (last !== null){ t += (now - last)/1000*speed; if (t >= T){ t = T; setPlay(false); } } last = now; }
+  draw(); requestAnimationFrame(loop);
+}
+resize(); requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
